@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>TWITTER RETRO</title>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+    <style>
+        :root { --bg: #c0c0c0; --win: #000080; --text: #000; }
+        * { box-sizing: border-box; }
+        body { background-color: #008080; font-family: 'Courier New', monospace; margin: 0; height: 100vh; display: flex; flex-direction: column; }
+        .window { background: var(--bg); display: flex; flex-direction: column; height: 100%; border: 2px solid #fff; box-shadow: 1px 1px 5px #000; }
+        .title-bar { background: var(--win); color: white; padding: 8px; font-weight: bold; display: flex; justify-content: space-between; }
+        .content { flex: 1; padding: 10px; overflow-y: auto; }
+        input, textarea { background: #fff; border: 2px inset #eee; padding: 10px; width: 100%; margin-bottom: 10px; font-size: 16px; }
+        button { background: var(--bg); border: 2px outset #fff; padding: 10px; cursor: pointer; font-weight: bold; width: 100%; margin-bottom: 5px; }
+        button:active { border: 2px inset #fff; }
+        .post { background: #fff; border: 2px solid #808080; padding: 10px; margin-bottom: 15px; }
+        .post-header { font-size: 11px; color: #555; border-bottom: 1px solid #ccc; margin-bottom: 5px; }
+        .comment { margin-left: 10px; border-left: 2px solid var(--win); padding-left: 8px; font-size: 13px; margin-top: 5px; background: #eee; }
+        .hidden { display: none !important; }
+        #user-profile { background: #e0e0e0; padding: 8px; border: 1px solid #808080; margin-bottom: 10px; font-size: 11px; }
+    </style>
+</head>
+<body>
+
+<div class="window">
+    <div class="title-bar">
+        <span>TWITTER_RETRO.EXE</span>
+        <span id="status" style="font-size: 10px; color: #0f0;">• ONLINE</span>
+    </div>
+
+    <div class="content">
+        <div id="auth-screen">
+            <h2 style="text-align:center">LOGIN.SYS</h2>
+            <input type="text" id="reg-name" placeholder="USUARIO">
+            <input type="password" id="reg-pass" placeholder="PASSWORD">
+            <button onclick="login()">ENTRAR AL SISTEMA</button>
+        </div>
+
+        <div id="app-screen" class="hidden">
+            <div id="user-profile"></div>
+            <textarea id="post-text" rows="3" placeholder="Escribe un mensaje global..."></textarea>
+            <button onclick="publicarGlobal()">ENVIAR A TODOS</button>
+            <hr>
+            <div id="feed">Cargando transmisiones...</div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // 1. CONFIGURACIÓN DE FIREBASE (REEMPLAZA CON TU CONFIG)
+    const firebaseConfig = {
+        apiKey: "TU_API_KEY",
+        authDomain: "TU_PROYECTO.firebaseapp.com",
+        databaseURL: "https://TU_PROYECTO-default-rtdb.firebaseio.com",
+        projectId: "TU_PROYECTO",
+        storageBucket: "TU_PROYECTO.appspot.com",
+        messagingSenderId: "TU_ID",
+        appId: "TU_APP_ID"
+    };
+    
+    firebase.initializeApp(firebaseConfig);
+    const database = firebase.database();
+
+    let user = null;
+
+    // 2. SISTEMA DE LOGIN PERSISTENTE
+    function login() {
+        const name = document.getElementById('reg-name').value.trim();
+        const pass = document.getElementById('reg-pass').value;
+
+        if (name.length < 3) return alert("Usuario inválido");
+
+        user = { 
+            name: name, 
+            id: "ID-" + Math.floor(Math.random()*999),
+            fecha: new Date().toLocaleDateString()
+        };
+        
+        localStorage.setItem('retro_user', JSON.stringify(user));
+        iniciarApp();
+    }
+
+    window.onload = () => {
+        const saved = localStorage.getItem('retro_user');
+        if(saved) {
+            user = JSON.parse(saved);
+            iniciarApp();
+        }
+    };
+
+    function iniciarApp() {
+        document.getElementById('auth-screen').classList.add('hidden');
+        document.getElementById('app-screen').classList.remove('hidden');
+        document.getElementById('user-profile').innerHTML = `USUARIO: ${user.name} | ${user.id}`;
+        escucharMensajes();
+    }
+
+    // 3. FUNCIÓN PARA PUBLICAR EN TIEMPO REAL
+    function publicarGlobal() {
+        const text = document.getElementById('post-text').value;
+        if (!text.trim()) return;
+
+        const newPostKey = database.ref().child('posts').push().key;
+        
+        database.ref('posts/' + newPostKey).set({
+            autor: user.name,
+            texto: text,
+            fecha: new Date().toLocaleTimeString(),
+            timestamp: Date.now()
+        });
+
+        document.getElementById('post-text').value = "";
+    }
+
+    // 4. ESCUCHAR CAMBIOS (AQUÍ SUCEDE LA MAGIA)
+    function escucharMensajes() {
+        database.ref('posts').orderByChild('timestamp').on('value', (snapshot) => {
+            const feed = document.getElementById('feed');
+            feed.innerHTML = "";
+            
+            const data = snapshot.val();
+            const posts = [];
+            
+            for (let id in data) {
+                posts.unshift({id, ...data[id]});
+            }
+
+            posts.forEach(p => {
+                feed.innerHTML += `
+                    <div class="post">
+                        <div class="post-header">${p.autor} @ ${p.fecha}</div>
+                        <div>${p.texto}</div>
+                        ${p.autor === user.name ? `<button onclick="borrarPost('${p.id}')" style="width:auto; font-size:10px; color:red;">BORRAR</button>` : ''}
+                    </div>
+                `;
+            });
+        });
+    }
+
+    function borrarPost(postId) {
+        if(confirm("¿Borrar del servidor?")) {
+            database.ref('posts/' + postId).remove();
+        }
+    }
+</script>
+</body>
+</html>
